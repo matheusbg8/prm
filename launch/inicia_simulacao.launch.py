@@ -1,6 +1,7 @@
 from launch import LaunchDescription
-from launch.substitutions import PathJoinSubstitution, FindExecutable
-from launch.actions import SetEnvironmentVariable, ExecuteProcess
+from launch.substitutions import PathJoinSubstitution, FindExecutable, LaunchConfiguration
+from launch.actions import SetEnvironmentVariable, ExecuteProcess, DeclareLaunchArgument
+from launch.conditions import IfCondition
 
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
@@ -26,13 +27,21 @@ def generate_launch_description():
     # ------------------------------------------------------
     # Caminho para o mundo a ser carregado
     # ------------------------------------------------------
+
+    # Verifica argumento com o nome do mundo que será simulado
+    world_file_arg = DeclareLaunchArgument(
+        'world',
+        default_value='arena.sdf',
+        description='Nome do arquivo .sdf do mundo a ser carregado'
+    )
+
     # Encontra o diretório de instalação do pacote 'prm'.
     pkg_share = FindPackageShare("prm").find("prm")
 
     # Nome do arquivo do mundo (SDF) a ser carregado
-#    world_file_name = 'arena_lab_v1.sdf'
-    world_file_name = 'arena.sdf'
-#    world_file_name = 'spherical_coordinates.sdf'
+
+    # Recupera dos parametros ou utiliza o default
+    world_file_name =  world_file_name = LaunchConfiguration('world')
 
     # Caminho completo para o arquivo do mundo
     world_path = PathJoinSubstitution([
@@ -41,6 +50,7 @@ def generate_launch_description():
         world_file_name
     ])
 
+# Alguns teste utilizando cenários já existentes no gazebo
 #    world_path='/usr/share/ignition/ignition-gazebo6/worlds/sensors_demo.sdf'
 #    world_path='/usr/share/ignition/ignition-gazebo6/worlds/heightmap.sdf'
 #    world_path='/usr/share/ignition/ignition-gazebo6/worlds/fuel.sdf'
@@ -75,7 +85,6 @@ def generate_launch_description():
         pkg_share,
         os.path.join(pkg_share, "models")
     ])
-#/usr/share/gazebo-11/models/
 
     gz_set_env = SetEnvironmentVariable(
         name="IGN_GAZEBO_RESOURCE_PATH",
@@ -91,7 +100,9 @@ def generate_launch_description():
         executable="parameter_bridge",
         name="ros_gz_bridge_world",
         arguments=[
-            "/sky_cam@sensor_msgs/msg/Image@ignition.msgs.Image"
+            "/sky_cam@sensor_msgs/msg/Image@ignition.msgs.Image",
+            # Necessário para controladores como diff_drive_controller
+            "/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock"
         ],
         output="screen",
     )
@@ -101,6 +112,7 @@ def generate_launch_description():
     # ------------------------------------------------------
     # Inclui as configurações de ambiente, a ponte e o lançamento do Gazebo.
     return LaunchDescription([
+        world_file_arg,
         gz_set_env,
         bridge,
         gazebo

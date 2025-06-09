@@ -14,23 +14,27 @@ class GroundTruthOdomPublisher(Node):
     def __init__(self):
         super().__init__('ground_truth_odom_publisher')
 
+        # Declara o parâmetro 'robot_name' com valor padrão
+        self.declare_parameter('robot_name', 'prm_robot')
+        robot_name = self.get_parameter('robot_name').get_parameter_value().string_value
+
         # Assinatura no tópico de pose vinda do simulador
-        self.create_subscription(Pose, '/model/prm_robot/pose', self.pose_callback, 10)
+        self.create_subscription(Pose, f'/model/{robot_name}/pose', self.pose_callback, 10)
 
         # Publicador de odometria ground truth
-        self.odom_pub = self.create_publisher(Odometry, '/odom_gt', 10)
+        self.odom_pub = self.create_publisher(Odometry, f'{robot_name}/odom_gt', 10)
 
         # Broadcaster de TF: odom_gt -> base_link
         self.tf_broadcaster = TransformBroadcaster(self)
 
         # Base frame
-        self.base_frame = 'base_link'
-        self.odom_frame = 'odom_gt'
+        self.base_frame = f'{robot_name}_base_link'
+        self.odom_frame = f'{robot_name}_odom_gt'
 
     def pose_callback(self, msg: Pose):
         now = self.get_clock().now().to_msg()
 
-        # Publica a odometria no tópico /odom_gt
+        # Publica a odometria no tópico robot_name/odom_gt
         odom_msg = Odometry()
         odom_msg.header.stamp = now
         odom_msg.header.frame_id = self.odom_frame

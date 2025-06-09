@@ -1,17 +1,21 @@
 from launch import LaunchDescription
-from launch.substitutions import PathJoinSubstitution, Command
-from launch.actions import ExecuteProcess, RegisterEventHandler
+from launch.substitutions import PathJoinSubstitution, Command, LaunchConfiguration
+from launch.actions import ExecuteProcess, RegisterEventHandler, DeclareLaunchArgument, OpaqueFunction
 from launch.event_handlers import OnProcessExit
 
 from launch_ros.substitutions import FindPackageShare
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 
 
 import os
 
 # Comando para controlar o robô: ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
-def generate_launch_description():
+def launch_setup(context, *args, **kwargs):
+
+    # Obtem a string com nome do robo passada por argumento para o launch
+    robot_name = LaunchConfiguration('robot_name').perform(context)
+
     # ------------------------------------------------------
     # Caminho para o arquivo Xacro do robô
     # ------------------------------------------------------
@@ -28,7 +32,10 @@ def generate_launch_description():
     # ------------------------------------------------------
     # Executa o comando `xacro <caminho>` em tempo de lançamento,
     # resultando no conteúdo URDF expandido como uma string.
-    robot_urdf_final = Command(["xacro ", urdf_path])
+    robot_urdf_final = Command([
+        "xacro ", urdf_path,
+        " robot_name:=", robot_name
+    ]) # Importante manter os espacos em branco entre os comandos
 
     # ------------------------------------------------------
     # Nodo robot_state_publisher
@@ -58,11 +65,8 @@ def generate_launch_description():
     load_joint_state_controller = ExecuteProcess(
         name="activate_joint_state_broadcaster",
         cmd=[
-            "ros2",
-            "control",
-            "load_controller",
-            "--set-state",
-            "active",
+            "ros2", "control", "load_controller",
+            "--set-state", "active",
             "joint_state_broadcaster",
         ],
         shell=False,
@@ -75,7 +79,10 @@ def generate_launch_description():
         package="controller_manager",
         executable="spawner",
         name="spawner_diff_drive_base_controller",
-        arguments=["diff_drive_base_controller"],
+        # namespace=robot_name,
+        arguments=[
+            "diff_drive_base_controller"
+        ],
         parameters=[diff_drive_params],
         output="screen",
     )
@@ -87,8 +94,8 @@ def generate_launch_description():
         executable="relay",
         parameters=[
             {
-                "input_topic": "/diff_drive_base_controller/odom",
-                "output_topic": "/odom",
+                "input_topic": "diff_drive_base_controller/odom",
+                "output_topic": "odom",
             }
         ],
         output="screen",
@@ -101,8 +108,8 @@ def generate_launch_description():
         executable="relay",
         parameters=[
             {
-                "input_topic": "/cmd_vel",
-                "output_topic": "/diff_drive_base_controller/cmd_vel_unstamped",
+                "input_topic": "cmd_vel",
+                "output_topic": "diff_drive_base_controller/cmd_vel_unstamped",
             }
         ],
         output="screen",
@@ -135,7 +142,7 @@ def generate_launch_description():
         executable="create",
         output="screen",
         arguments=[
-            "-name", "prm_robot",          # Nome da entidade no simulador
+            "-name", robot_name,          # Nome da entidade no simulador
             "-topic", "robot_description", # Descrição do robô a ser utilizada
             "-z", "1.0",                   # Altura inicial do robô
             "-x", "-2.0",                  # Posição no eixo X
@@ -152,25 +159,23 @@ def generate_launch_description():
     bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
-        name="ros_gz_bridge_prm_robot",
+        name=f"bridge_{robot_name}",
         arguments=[
-            "/scan@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan",
-            "/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU",
+            f"/{robot_name}/scan@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan",
+            f"/{robot_name}/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU",
             # Camera normal
-            # "/robot_cam@sensor_msgs/msg/Image@ignition.msgs.Image",
-            # "/camera_info@sensor_msgs/msg/CameraInfo@ignition.msgs.CameraInfo",
+            # f"/{robot_name}/robot_cam@sensor_msgs/msg/Image@ignition.msgs.Image",
+            # f"/{robot_name}/camera_info@sensor_msgs/msg/CameraInfo@ignition.msgs.CameraInfo",
             # Camera de segmentacao semantica
-            "/robot_cam/labels_map@sensor_msgs/msg/Image@ignition.msgs.Image",
-            "/robot_cam/colored_map@sensor_msgs/msg/Image@ignition.msgs.Image",
-            "/robot_cam/camera_info@sensor_msgs/msg/CameraInfo@ignition.msgs.CameraInfo",            
+            f"/{robot_name}/robot_cam/labels_map@sensor_msgs/msg/Image@ignition.msgs.Image",
+            f"/{robot_name}/robot_cam/colored_map@sensor_msgs/msg/Image@ignition.msgs.Image",
+            f"/{robot_name}/robot_cam/camera_info@sensor_msgs/msg/CameraInfo@ignition.msgs.CameraInfo",            
             # Camera de detectao bounding box
-            # "/boxes_visible_2d_image@sensor_msgs/msg/Image@ignition.msgs.Image",
-            # "/camera_info@sensor_msgs/msg/CameraInfo@ignition.msgs.CameraInfo",
+            # f"/{robot_name}/boxes_visible_2d_image@sensor_msgs/msg/Image@ignition.msgs.Image",
+            # f"/{robot_name}/camera_info@sensor_msgs/msg/CameraInfo@ignition.msgs.CameraInfo",
             # Mensagem com anotacoes nao e suportado pelo ros_gz_bridge
-            # Necessário para controladores como diff_drive_controller
-            "/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock",
             # Ground Truth de Posicao
-            "/model/prm_robot/pose@geometry_msgs/msg/Pose[ignition.msgs.Pose",
+            f"/model/{robot_name}/pose@geometry_msgs/msg/Pose[ignition.msgs.Pose",
         ],
         output="screen",
     )
@@ -180,7 +185,7 @@ def generate_launch_description():
         package="prm",
         executable="ground_truth_odometry",
         name="odom_gt",
-        arguments="",
+        parameters=[{"robot_name": robot_name}],
         output="screen",
     )
 
@@ -189,7 +194,7 @@ def generate_launch_description():
         package="prm",
         executable="robo_mapper",
         name="robo_mapper",
-        arguments="",
+        parameters=[{"robot_name": robot_name}],
         output="screen",
     )
 
@@ -207,8 +212,9 @@ def generate_launch_description():
     # Definição da descrição completa do lançamento
     # ------------------------------------------------------
     # Inclui todos os nós definidos acima no lançamento.
-    return LaunchDescription([
+    return [
         bridge,
+        # PushRosNamespace(robot_name),
         robot_state_publisher_node,
         spawn_entity,
         RegisterEventHandler(
@@ -225,8 +231,18 @@ def generate_launch_description():
         ),
         odom_gt,
         robo_mapper,
-        rviz_node,
+        rviz_node
   #      relay_odom, # Nodos de redirecionamento de mensagens (Estamos usando apenas odom_gt agora)
-        relay_cmd_vel # Nodos de redirecionamento de mensagens
-  #      controle
+        # relay_cmd_vel # Nodos de redirecionamento de mensagens
+  #      controle        
+    ]
+
+def generate_launch_description():
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            name='robot_name',
+            default_value='prm_robot',
+            description='Nome do robô (modelo e prefixo de sensores)'
+        ),
+        OpaqueFunction(function=launch_setup)
     ])

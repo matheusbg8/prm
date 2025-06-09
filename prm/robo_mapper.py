@@ -24,10 +24,17 @@ class RoboMapper(Node):
     def __init__(self):
         super().__init__('robo_mapper')
 
+        # Declara o parâmetro 'robot_name' com valor padrão
+        self.declare_parameter('robot_name', 'prm_robot')
+        robot_name = self.get_parameter('robot_name').get_parameter_value().string_value
+
+        self.map_frame_id = f'{robot_name}_map'
+        self.odom_gt_frame_id = f'{robot_name}_odom_gt'
+        
         # Subscribers
-        self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
-        self.create_subscription(Pose, '/model/prm_robot/pose', self.odom_callback, 10)
-        self.create_subscription(Image, '/robot_cam/colored_map', self.camera_callback, 10)
+        self.create_subscription(LaserScan, f'{robot_name}/scan', self.scan_callback, 10)
+        self.create_subscription(Pose, f'/model/{robot_name}/pose', self.odom_callback, 10)
+        self.create_subscription(Image, f'{robot_name}/robot_cam/colored_map', self.camera_callback, 10)
 
         # Utilizado para converter imagens ROS -> OpenCV
         self.bridge = CvBridge()
@@ -49,7 +56,7 @@ class RoboMapper(Node):
         self.grid_map = -np.ones((self.grid_size, self.grid_size), dtype=np.int8)
 
         # Publisher do mapa
-        self.map_pub = self.create_publisher(OccupancyGrid, '/grid_map', 10)
+        self.map_pub = self.create_publisher(OccupancyGrid, f'{robot_name}/grid_map', 10)
 
         # Publicando o frame map para vizualização no RVis
         # Utilizar o comando: ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map odom
@@ -58,8 +65,8 @@ class RoboMapper(Node):
 
         static_tf = TransformStamped()
         static_tf.header.stamp = self.get_clock().now().to_msg()
-        static_tf.header.frame_id = "map"
-        static_tf.child_frame_id = "odom_gt"
+        static_tf.header.frame_id = self.map_frame_id
+        static_tf.child_frame_id = self.odom_gt_frame_id
         static_tf.transform.translation.x = 0.0
         static_tf.transform.translation.y = 0.0
         static_tf.transform.translation.z = 0.0
@@ -113,7 +120,7 @@ class RoboMapper(Node):
     def publish_occupancy_grid(self):
         grid_msg = OccupancyGrid()
         grid_msg.header.stamp = self.get_clock().now().to_msg()
-        grid_msg.header.frame_id = "map"
+        grid_msg.header.frame_id = self.map_frame_id
 
         # Metadados do mapa
         grid_msg.info.resolution = self.resolution
